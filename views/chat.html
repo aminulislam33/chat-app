@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConvoConnect</title>
+    <link rel="stylesheet" href="chat.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+
+<body>
+    <header>
+        <h1>Dashboard</h1>
+        <h2 id="welcomeMessage">Welcome, <span id="username"></span></h2>
+    </header>
+    <main>
+        <div class="user-list-container">
+            <h2>Users</h2>
+            <ul id="userList" class="user-list"></ul>
+        </div>
+
+        <div id="chatContainer" class="chat-container">
+            <h2>Chat with <span id="chatWithUser"></span></h2>
+            <div id="messages" class="messages"></div>
+            <div id="messageFormContainer" class="message-form-container">
+                <form id="messageForm" class="message-form">
+                    <input type="text" id="messageInput" placeholder="Enter message" required>
+                    <button type="submit" id="sendButton">
+                        <i class="fas fa-paper-plane send-icon"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const userList = document.getElementById('userList');
+        const chatContainer = document.getElementById('chatContainer');
+        const chatWithUserElem = document.getElementById('chatWithUser');
+        const messages = document.getElementById('messages');
+        const messageForm = document.getElementById('messageForm');
+        const messageInput = document.getElementById('messageInput');
+        const usernameElem = document.getElementById('username');
+        const messageFormContainer = document.getElementById('messageFormContainer');
+
+        let currentUserEmail = '';
+
+        fetch('/api/user')
+            .then(response => response.json())
+            .then(user => {
+                usernameElem.textContent = user.fullName;
+                currentUserEmail = user.email; // Store the current user's email
+            })
+            .catch(error => console.error('Error fetching user info:', error));
+
+        fetch('/api/users')
+            .then(response => response.json())
+            .then(users => {
+                users.forEach(user => {
+                    const li = document.createElement('li');
+                    li.textContent = user.fullName;
+                    li.className = 'user-item';
+                    li.dataset.email = user.email;
+                    userList.appendChild(li);
+                });
+            })
+            .catch(error => console.error('Error fetching users:', error));
+
+        userList.addEventListener('click', async (event) => {
+            const selectedUser = event.target;
+            if (selectedUser.classList.contains('user-item')) {
+                const email = selectedUser.dataset.email;
+                chatWithUserElem.textContent = email;
+                chatContainer.style.display = 'block';
+                messageFormContainer.style.display = 'flex';
+
+                const response = await fetch(`/messages/${email}`);
+                const chatHistory = await response.json();
+
+                messages.innerHTML = '';
+
+                chatHistory.forEach(msg => {
+                    const item = document.createElement('div');
+                    item.classList.add('message', msg.sender.email === currentUserEmail ? 'sender' : 'receiver');
+                    item.innerHTML = `<strong>${msg.sender.email}:</strong> ${msg.message}`;
+                    messages.appendChild(item);
+                });
+
+                socket.emit('joinRoom', email);
+            }
+        });
+
+        messageForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+
+            const message = messageInput.value;
+            const recipient = chatWithUserElem.textContent;
+
+            if (message.trim() !== '') {
+                // Emit the message to the server, but do not show it immediately
+                socket.emit('sendMessage', { recipient, message });
+
+                // Clear the input field
+                messageInput.value = '';
+            }
+        });
+
+        socket.on('message', (data) => {
+            const item = document.createElement('div');
+            item.classList.add('message', data.sender === currentUserEmail ? 'sender' : 'receiver');
+            item.innerHTML = `<strong>${data.sender}:</strong> ${data.message}`;
+            messages.appendChild(item);
+            messages.scrollTop = messages.scrollHeight;
+        });
+    </script>
+</body>
+
+</html>
